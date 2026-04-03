@@ -1,0 +1,21 @@
+{
+  "buildCommand": "npx expo export --platform web",
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/api/search-local", "destination": "/api/search-local" },
+    { "source": "/api/trends-desserts", "destination": "/api/trends-desserts" },
+    { "source": "/api/trends-rising", "destination": "/api/trends-rising" },
+    { "source": "/api/search-kakao", "destination": "/api/search-kakao" },
+    { "source": "/api/reverse-geocode", "destination": "/api/reverse-geocode" },
+    { "source": "/api/chat", "destination": "/api/chat" },
+    { "source": "/api/analyze-receipt", "destination": "/api/analyze-receipt" },
+    { "source": "/(.*)", "destination": "/" }
+  ],
+  "functions": {
+    "api/trends-desserts.js": { "maxDuration": 10 },
+    "api/trends-rising.js": { "maxDuration": 10 },
+    "api/search-local.js": { "maxDuration": 10 },
+    "api/chat.js": { "maxDuration": 30 },
+    "api/analyze-receipt.js": { "maxDuration": 30 }
+  }
+}

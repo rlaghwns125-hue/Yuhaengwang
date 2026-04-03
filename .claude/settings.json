@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls /c/Users/user/AppData/Local/Temp/*stitch*)",
+      "Bash(find /c/Users/user/AppData/Local/Temp -maxdepth 2 -name *stitch*)"
+    ]
+  }
+}

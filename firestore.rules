@@ -1,0 +1,51 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 트렌드: 누구나 읽기, 스크립트에서 쓰기
+    match /trends/{docId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // 사용자: 본인만 읽기/쓰기
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+
+      match /searchHistory/{docId} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+
+      match /preferences/{keyword} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+
+      // 영수증 기록
+      match /receipts/{docId} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+
+      // 도감
+      match /dogam/{keyword} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+    }
+
+    // 검색 로그: 누구나
+    match /searchLogs/{docId} {
+      allow read: if true;
+      allow create: if true;
+    }
+
+    // 유저 점수 (랭킹용): 누구나 읽기, 본인만 쓰기
+    match /userScores/{uid} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // 장소 캐시
+    match /places/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}
