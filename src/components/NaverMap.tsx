@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { View, StyleSheet, Platform, Text, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, Platform, Text, TouchableOpacity, AppState } from 'react-native';
 import { Place } from '../types';
 import { NAVER_CONFIG } from '../config/api';
 
@@ -10,6 +10,7 @@ interface NaverMapProps {
   focusPlace: Place | null;
   onMarkerPress: (place: Place) => void;
   onCenterChanged?: (lat: number, lng: number) => void;
+  onSearchHere?: () => void;
 }
 
 export default function NaverMap({
@@ -19,9 +20,10 @@ export default function NaverMap({
   focusPlace,
   onMarkerPress,
   onCenterChanged,
+  onSearchHere,
 }: NaverMapProps) {
   if (Platform.OS === 'web') {
-    return <NaverMapWeb latitude={latitude} longitude={longitude} places={places} focusPlace={focusPlace} onMarkerPress={onMarkerPress} onCenterChanged={onCenterChanged} />;
+    return <NaverMapWeb latitude={latitude} longitude={longitude} places={places} focusPlace={focusPlace} onMarkerPress={onMarkerPress} onCenterChanged={onCenterChanged} onSearchHere={onSearchHere} />;
   }
 
   return (
@@ -87,6 +89,7 @@ function NaverMapWeb({
   focusPlace,
   onMarkerPress,
   onCenterChanged,
+  onSearchHere,
 }: NaverMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
@@ -158,12 +161,17 @@ function NaverMapWeb({
     markersRef.current = [];
 
     places.forEach((place) => {
+      const distText = place.distance
+        ? (place.distance >= 1000 ? `${(place.distance / 1000).toFixed(1)}km` : `${place.distance}m`)
+        : '';
+      const label = distText ? `${place.name} · ${distText}` : place.name;
+
       const marker = new naver.maps.Marker({
         position: new naver.maps.LatLng(place.latitude, place.longitude),
         map: mapInstanceRef.current,
         title: place.name,
         icon: {
-          content: `<div style="background:#FF6B6B;color:#fff;padding:4px 8px;border-radius:12px;font-size:12px;font-weight:bold;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.3)">${place.name}</div>`,
+          content: `<div style="background:#FF6B6B;color:#fff;padding:4px 8px;border-radius:12px;font-size:11px;font-weight:bold;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.3)">${label}</div>`,
           anchor: new naver.maps.Point(0, 0),
         },
       });
@@ -213,6 +221,41 @@ function NaverMapWeb({
     mapInstanceRef.current.setZoom(17);
   }, [focusPlace]);
 
+  // 페이지 복귀 시 지도 리사이즈 (마켓 등에서 돌아올 때 깨짐 방지)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleResize = () => {
+      const naver = (window as any).naver;
+      if (mapInstanceRef.current && naver?.maps) {
+        naver.maps.Event.trigger(mapInstanceRef.current, 'resize');
+      }
+    };
+
+    // visibilitychange: 탭 전환 시
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        setTimeout(handleResize, 100);
+      }
+    };
+
+    // popstate: 뒤로가기 시
+    const handlePopState = () => setTimeout(handleResize, 100);
+
+    window.addEventListener('resize', handleResize);
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('popstate', handlePopState);
+
+    // 마운트 시에도 한번 트리거 (다른 페이지에서 돌아왔을 때)
+    setTimeout(handleResize, 200);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
+
   if (error) {
     return (
       <View style={styles.container}>
@@ -228,9 +271,16 @@ function NaverMapWeb({
   return (
     <View style={styles.container}>
       <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
-      <TouchableOpacity style={styles.myLocationBtn} onPress={goToMyLocation} activeOpacity={0.8}>
-        <Text style={styles.myLocationIcon}>📍</Text>
-      </TouchableOpacity>
+      <View style={styles.mapButtons}>
+        <TouchableOpacity style={styles.myLocationBtn} onPress={goToMyLocation} activeOpacity={0.8}>
+          <Text style={styles.myLocationIcon}>📍</Text>
+        </TouchableOpacity>
+        {onSearchHere && (
+          <TouchableOpacity style={styles.searchHereBtn} onPress={onSearchHere} activeOpacity={0.8}>
+            <Text style={styles.searchHereText}>🔍 현위치 검색</Text>
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
   );
 }
@@ -267,10 +317,18 @@ const styles = StyleSheet.create({
     color: '#4A90D9',
     paddingVertical: 4,
   },
-  myLocationBtn: {
+  mapButtons: {
     position: 'absolute',
-    bottom: 200,
-    right: 12,
+    bottom: 80,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10,
+    zIndex: 5,
+  },
+  myLocationBtn: {
     width: 44,
     height: 44,
     backgroundColor: '#fff',
@@ -282,9 +340,24 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 4,
-    zIndex: 5,
   },
   myLocationIcon: {
     fontSize: 22,
+  },
+  searchHereBtn: {
+    backgroundColor: '#FF6B6B',
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  searchHereText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

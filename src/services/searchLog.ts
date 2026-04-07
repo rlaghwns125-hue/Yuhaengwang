@@ -29,18 +29,20 @@ function markSearched(keyword: string): void {
   } catch {}
 }
 
-// 검색 로그 저장 (디바이스당 하루 1회만 카운트)
-export async function logSearch(keyword: string): Promise<void> {
-  if (hasSearchedToday(keyword)) return; // 중복 방지
+// 검색 로그 저장 (디바이스당 1분 쿨다운)
+export async function logSearch(keyword: string): Promise<boolean> {
+  if (hasSearchedRecently(keyword)) return false;
 
   try {
     await addDoc(collection(db, 'searchLogs'), {
       keyword,
       searchedAt: Timestamp.now(),
     });
-    markSearchedToday(keyword);
-  } catch {
-    // 로그 저장 실패는 무시
+    markSearched(keyword);
+    return true; // 저장 성공
+  } catch (e) {
+    console.warn('검색 로그 저장 실패:', e);
+    return false;
   }
 }
 
@@ -49,22 +51,31 @@ export async function getPopularSearches(topN: number = 3): Promise<Array<{ keyw
   try {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const logsRef = collection(db, 'searchLogs');
-    const q = query(
-      logsRef,
-      where('searchedAt', '>=', Timestamp.fromDate(since)),
-      orderBy('searchedAt', 'desc')
-    );
+    // 단순 쿼리 (인덱스 불필요)
+    const q = query(logsRef);
 
     const snapshot = await getDocs(q);
     const counts: Record<string, number> = {};
+    const firstSeen: Record<string, number> = {};
 
-    snapshot.forEach((doc) => {
-      const keyword = doc.data().keyword;
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      const time = data.searchedAt?.toDate()?.getTime() || 0;
+      // 24시간 이내만
+      if (time < since.getTime()) return;
+
+      const keyword = data.keyword;
       counts[keyword] = (counts[keyword] || 0) + 1;
+      if (!firstSeen[keyword] || time < firstSeen[keyword]) {
+        firstSeen[keyword] = time;
+      }
     });
 
     return Object.entries(counts)
-      .sort((a, b) => b[1] - a[1])
+      .sort((a, b) => {
+        if (b[1] !== a[1]) return b[1] - a[1];
+        return (firstSeen[a[0]] || 0) - (firstSeen[b[0]] || 0);
+      })
       .slice(0, topN)
       .map(([keyword, count]) => ({ keyword, count }));
   } catch {

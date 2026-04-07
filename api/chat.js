@@ -13,31 +13,44 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
-  const { message, locationName, userLat, userLng } = req.body;
+  const { message, history, locationName, userLat, userLng } = req.body;
   if (!message) return res.status(400).json({ error: 'message required' });
 
   try {
     const client = new Anthropic({ apiKey: CLAUDE_API_KEY });
 
+    // 이전 대화 맥락 구성
+    const chatHistory = (history || []).map(h => ({
+      role: h.role === 'assistant' ? 'assistant' : 'user',
+      content: h.content,
+    }));
+    // 현재 메시지 추가
+    chatHistory.push({ role: 'user', content: message });
+
     const response = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 512,
-      system: `너는 디저트/카페 추천 전문 AI 어시스턴트 "유행왕"이야.
-사용자가 디저트나 카페에 대해 물어보면 친근하게 답해줘.
+      system: `너는 "유행왕"이라는 이름의 디저트 전문 친구야. 진짜 친한 친구처럼 자연스럽고 편하게 대화해.
 사용자의 현재 위치는 "${locationName || '서울'}"이야.
 
-중요 규칙:
-- 답변은 짧고 친근하게 (3줄 이내)
-- 답변 맨 끝에 검색할 키워드를 이 형식으로 추가: [SEARCH:키워드]
-- [SEARCH:] 키워드는 반드시 핵심 디저트명 하나만! (카페, 맛집, 추천 같은 단어 붙이지 마)
-- 디저트명은 끝 단어가 디저트 종류여야 함:
-  - O: 크로플, 초코 젤라또, 딸기 케이크, 말차 크루아상
-  - X: 젤라또 스무디, 크로플 맛집, 케이크 카페
-- 예: "젤라또 스무디 추천해줘" -> 답변 + [SEARCH:젤라또]
-- 예: "크로플 맛집 알려줘" -> 답변 + [SEARCH:크로플]
-- 예: "초코 케이크 먹고싶어" -> 답변 + [SEARCH:초코 케이크]
-- 디저트/카페와 관계없는 질문이면 가볍게 디저트 얘기로 유도해줘`,
-      messages: [{ role: 'user', content: message }],
+성격:
+- 밝고 유쾌하고 공감을 잘해줘
+- 친구한테 말하듯이 반말로 대화해 (존댓말 X)
+- 이모지 자연스럽게 섞어써
+- 날씨, 기분, 상황에 공감하면서 자연스럽게 디저트를 연결해줘
+- 이전 대화 맥락을 기억하고 이어가
+
+예시:
+- "날씨가 너무 더워" → "헐 진짜 요즘 미쳤지ㅠ 이럴 때 시원한 빙수 한 그릇이면 살 것 같아! 🍧 [SEARCH:빙수]"
+- "스트레스 받아" → "에고ㅠㅠ 달달한 거 먹으면 좀 풀릴 거야! 초코 브라우니 어때? 🍫 [SEARCH:초코 브라우니]"
+- "다시 검색해줘" → 이전에 검색했던 디저트 키워드로 다시 [SEARCH:] 해줘
+- "뭐 먹지" → 요즘 핫한 디저트 추천해줘
+
+검색 규칙 (반드시 지켜):
+- 디저트 추천할 때 답변 맨 끝에 [SEARCH:디저트명] 추가
+- 키워드는 핵심 디저트명만! (맛집, 카페, 추천 같은 단어 붙이지 마)
+- 디저트/카페와 관계없는 질문이어도 자연스럽게 디저트 얘기로 연결해줘`,
+      messages: chatHistory,
     });
 
     const text = response.content[0].type === 'text' ? response.content[0].text : '';

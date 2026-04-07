@@ -2,7 +2,15 @@
   "permissions": {
     "allow": [
       "Bash(ls /c/Users/user/AppData/Local/Temp/*stitch*)",
-      "Bash(find /c/Users/user/AppData/Local/Temp -maxdepth 2 -name *stitch*)"
+      "Bash(find /c/Users/user/AppData/Local/Temp -maxdepth 2 -name *stitch*)",
+      "Bash(curl -s \"https://yuhaengwang.vercel.app/api/trends-desserts\")",
+      "Bash(curl -s \"https://dapi.kakao.com/v2/local/search/keyword.json?query=%EC%B0%BD%EC%96%B5%EB%96%A1&x=126.8963&y=37.5326&radius=5000&sort=distance&size=3\" -H \"Authorization: KakaoAK 171c8a012546ba3bf263f3f21f8eb925\" -o C:/Users/user/AppData/Local/Temp/changuk.json)",
+      "Bash(node -e ':*)",
+      "Bash(curl -s \"https://dapi.kakao.com/v2/local/search/keyword.json?query=%EC%B0%BD%EC%96%B5%EB%96%A1&x=126.8963&y=37.5326&radius=20000&sort=distance&size=5\" -H \"Authorization: KakaoAK 171c8a012546ba3bf263f3f21f8eb925\" -o C:/Users/user/AppData/Local/Temp/changuk2.json)",
+      "Bash(curl -s \"http://localhost:3001/api/search-local?query=%EC%98%81%EB%93%B1%ED%8F%AC+%EC%B0%BD%EC%96%B5%EB%96%A1&display=5&sort=comment\" -H \"X-Naver-Client-Id: kQWf2s0UIgvgtbRWGl98\" -H \"X-Naver-Client-Secret: YtKOjWZ2BI\" -o C:/Users/user/AppData/Local/Temp/changuk_naver.json)",
+      "Bash(node -e \"const j=JSON.parse\\(require\\('fs'\\).readFileSync\\('C:/Users/user/AppData/Local/Temp/changuk_naver.json','utf8'\\)\\); j.items.forEach\\(\\(i,idx\\) => { console.log\\(\\(idx+1\\)+'. '+i.title.replace\\(/<[^>]*>/g,''\\)+' | 카테고리: '+i.category+' | '+i.roadAddress\\); }\\);\")",
+      "Read(//c/Users/user/AppData/Local/Temp/**)",
+      "Bash(curl -s \"https://dapi.kakao.com/v2/local/search/keyword.json?query=%EC%B0%BD%EC%96%B5%EB%96%A1&size=5\" -H \"Authorization: KakaoAK 171c8a012546ba3bf263f3f21f8eb925\" -o C:/Users/user/AppData/Local/Temp/changuk3.json)"
     ]
   }
 }

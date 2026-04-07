@@ -16,6 +16,7 @@ import { Place } from '../types';
 import { logSearch } from '../services/searchLog';
 import { registerReceipt, getDogam, getMyRank, getMyScore, DogamItem } from '../services/dessertMaster';
 import { getDessertIcon } from '../constants/desserts';
+import { findRelevantDesserts, dessertInfoToContext } from '../services/dessertDB';
 
 interface ChatMessage {
   role: 'user' | 'ai';
@@ -103,9 +104,19 @@ export default function AiChatBubble({ locationName, userLat, userLng, userId, o
         return;
       }
 
-      // 일반 대화
+      // RAG: 디저트 DB에서 관련 정보 검색
+      const relevantDesserts = await findRelevantDesserts(text);
+      const dessertContext = dessertInfoToContext(relevantDesserts);
+
+      // 일반 대화 (이전 대화 맥락 + 디저트 지식 포함)
+      const history = messages
+        .filter((m) => !m.dogam && !m.rankInfo)
+        .slice(-10)
+        .map((m) => ({ role: m.role === 'ai' ? 'assistant' : 'user', content: m.text }));
+
       const response = await axios.post(API_ENDPOINTS.CHAT, {
-        message: text,
+        message: text + dessertContext,
+        history,
         locationName,
         userLat,
         userLng,

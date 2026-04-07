@@ -119,10 +119,10 @@ export async function getMyScore(uid: string): Promise<UserScore | null> {
   };
 }
 
-// 전체 랭킹 가져오기
+// 전체 랭킹 가져오기 (동일 점수 시 먼저 달성한 사람이 윗순위)
 export async function getRanking(topN: number = 50): Promise<UserScore[]> {
   const scoresRef = collection(db, 'userScores');
-  const q = query(scoresRef, orderBy('totalScore', 'desc'), limit(topN));
+  const q = query(scoresRef, orderBy('totalScore', 'desc'), limit(topN * 2));
   const snapshot = await getDocs(q);
 
   const ranking: UserScore[] = [];
@@ -136,7 +136,14 @@ export async function getRanking(topN: number = 50): Promise<UserScore[]> {
       updatedAt: data.updatedAt?.toDate() || new Date(),
     });
   });
-  return ranking;
+
+  // 동일 점수 시 updatedAt 빠른 순 (먼저 달성한 사람 우선)
+  ranking.sort((a, b) => {
+    if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
+    return a.updatedAt.getTime() - b.updatedAt.getTime();
+  });
+
+  return ranking.slice(0, topN);
 }
 
 // 내 등수 가져오기

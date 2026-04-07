@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { TrendItem } from '../types';
 import { getDessertIcon, getDessertImage } from '../constants/desserts';
+import { useMarketStore } from '../stores/marketStore';
 
 interface TrendButtonsProps {
   trends: TrendItem[];
@@ -34,15 +35,28 @@ export default function TrendButtons({
     );
   }
 
+  // 마켓 테마 적용 (구독해서 변경 시 리렌더링)
+  const equippedBarId = useMarketStore((s) => s.equippedIds.dessertBar);
+  const barItems = useMarketStore((s) => s.items);
+  const barTheme = equippedBarId ? barItems.find((i) => i.id === equippedBarId)?.themeData : null;
+
   const buttons = trends.map((trend) => {
     const isSelected = selectedTrend?.id === trend.id;
     const image = getDessertImage(trend.keyword);
     const emoji = trend.icon || getDessertIcon(trend.keyword);
 
+    const btnStyle = barTheme ? {
+      backgroundColor: isSelected ? barTheme.buttonSelectedBg : barTheme.buttonBg,
+      borderRadius: barTheme.buttonBorderRadius ?? 25,
+    } : {};
+    const txtStyle = barTheme ? {
+      color: isSelected ? barTheme.buttonSelectedTextColor : barTheme.buttonTextColor,
+    } : {};
+
     return (
       <TouchableOpacity
         key={trend.id}
-        style={[styles.button, isSelected && styles.buttonSelected]}
+        style={[styles.button, isSelected && styles.buttonSelected, btnStyle]}
         onPress={() => onSelect(trend)}
         activeOpacity={0.7}
       >
@@ -52,16 +66,11 @@ export default function TrendButtons({
           <Text style={styles.buttonIcon}>{emoji}</Text>
         )}
         <Text
-          style={[styles.buttonText, isSelected && styles.buttonTextSelected]}
+          style={[styles.buttonText, isSelected && styles.buttonTextSelected, txtStyle]}
           numberOfLines={1}
         >
           {trend.keyword}
         </Text>
-        {trend.id.startsWith('personal_') && (
-          <View style={styles.personalBadge}>
-            <Text style={styles.personalBadgeText}>MY</Text>
-          </View>
-        )}
       </TouchableOpacity>
     );
   });

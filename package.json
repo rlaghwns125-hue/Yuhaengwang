@@ -8,7 +8,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "proxy": "node proxy-server.js",
-    "update-trends": "node scripts/update-trends.js"
+    "update-trends": "node scripts/update-trends.js",
+    "build-dessert-db": "node scripts/build-dessert-db.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",

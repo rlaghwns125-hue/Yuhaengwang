@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { TrendItem, Place } from '../types';
 import { getLiveTrends, getCachedTrends, getDefaultTrends } from '../services/trends';
 import { searchDessertCafes } from '../services/naverSearch';
-import { getMergedRanking, recordSearch } from '../services/personalization';
+import { recordSearch } from '../services/personalization';
 import { logSearch } from '../services/searchLog';
 
 interface TrendState {
@@ -13,7 +13,7 @@ interface TrendState {
   isLoadingPlaces: boolean;
   searchQuery: string;
 
-  loadTrends: (uid: string | null) => Promise<void>;
+  loadTrends: () => Promise<void>;
   selectTrend: (trend: TrendItem, uid: string | null, locationName: string, lat?: number, lng?: number) => Promise<void>;
   searchDessert: (query: string, uid: string | null, locationName: string, lat?: number, lng?: number) => Promise<void>;
   setSearchQuery: (query: string) => void;
@@ -29,7 +29,7 @@ export const useTrendStore = create<TrendState>((set) => ({
   isLoadingPlaces: false,
   searchQuery: '',
 
-  loadTrends: async (uid) => {
+  loadTrends: async () => {
     set({ isLoadingTrends: true });
     try {
       // 1순위: 네이버 데이터랩 실시간 트렌드
@@ -42,8 +42,8 @@ export const useTrendStore = create<TrendState>((set) => ({
       if (globalTrends.length === 0) {
         globalTrends = getDefaultTrends();
       }
-      const merged = await getMergedRanking(uid, globalTrends);
-      set({ trends: merged, isLoadingTrends: false });
+      // 전국 순위만 표시 (개인화 순위는 마이페이지에서)
+      set({ trends: globalTrends, isLoadingTrends: false });
     } catch {
       set({ trends: getDefaultTrends(), isLoadingTrends: false });
     }
@@ -51,14 +51,14 @@ export const useTrendStore = create<TrendState>((set) => ({
 
   selectTrend: async (trend, uid, locationName, lat, lng) => {
     set({ selectedTrend: trend, isLoadingPlaces: true, places: [] });
+    // 검색 로그 먼저 저장 (검색 실패해도 로그는 남김)
+    logSearch(trend.keyword).catch(() => {});
+    if (uid) {
+      recordSearch(uid, trend.keyword).catch(() => {});
+    }
     try {
-      if (uid) {
-        await recordSearch(uid, trend.keyword);
-      }
       const places = await searchDessertCafes(trend.keyword, locationName, lat, lng);
       set({ places, isLoadingPlaces: false });
-      // 검색 로그 저장 (비동기, 실패 무시)
-      logSearch(trend.keyword);
     } catch {
       set({ isLoadingPlaces: false });
     }

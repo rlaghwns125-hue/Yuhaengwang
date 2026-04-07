@@ -49,46 +49,72 @@ export async function searchDessertCafes(
   userLng?: number
 ): Promise<Place[]> {
   if (userLat && userLng) {
-    // 카카오(위치 정확) + 네이버(메뉴 정보 풍부) 둘 다
+    // 카카오 + 네이버 항상 둘 다 검색 (네이버는 지역명 포함)
     const [kakao, naver] = await Promise.all([
-      searchWithKakao(keyword, userLat, userLng).catch(() => [] as Place[]),
-      searchWithNaverNearby(keyword, userLat, userLng).catch(() => [] as Place[]),
+      searchWithKakao(keyword, userLat, userLng, locationName).catch(() => [] as Place[]),
+      searchWithNaverNearby(keyword, userLat, userLng, locationName).catch(() => [] as Place[]),
     ]);
 
-    // 합치기 + 이름 기준 중복 제거
+    // 합치기 + 이름 기준 중복 제거 + 프랜차이즈 제거
     const seen = new Set<string>();
     const merged: Place[] = [];
-    // 카카오 먼저 (위치 정확도 높음)
     for (const p of [...kakao, ...naver]) {
       const key = p.name.replace(/\s/g, '');
-      if (!seen.has(key)) {
+      if (!seen.has(key) && !isFranchise(p.name)) {
         seen.add(key);
         merged.push(p);
       }
     }
+
+    // 근처에 결과 없으면 전국 검색 (거리 제한 없이)
+    if (merged.length === 0) {
+      const [naverWide, kakaoWide] = await Promise.all([
+        searchWithNaverNearby(keyword, userLat, userLng, locationName, false).catch(() => [] as Place[]),
+        searchKakaoNationwide(keyword).catch(() => [] as Place[]),
+      ]);
+      for (const p of [...naverWide, ...kakaoWide]) {
+        const key = p.name.replace(/\s/g, '');
+        if (!seen.has(key) && !isFranchise(p.name)) {
+          seen.add(key);
+          merged.push(p);
+        }
+      }
+    }
+
     // 거리순 정렬
     merged.sort((a, b) => (a.distance || 99999) - (b.distance || 99999));
-
-    // 프랜차이즈 제외
-    const filtered = merged.filter((p) => !isFranchise(p.name));
-    const results = filtered.length > 0 ? filtered : merged;
-
-    // 500m 이내 2개 이상이면 가까운 것만
-    const within500 = results.filter((p) => (p.distance || 99999) <= 500);
-    if (within500.length >= 2) return within500;
-
-    // 1km 이내 2개 이상이면 1km까지만
-    const within1km = results.filter((p) => (p.distance || 99999) <= 1000);
-    if (within1km.length >= 2) return within1km;
-
-    // 그 외 전체 반환
-    return results;
+    return merged;
   }
   return searchWithNaver(keyword, locationName);
 }
 
+// 카카오 전국 검색 (반경 제한 없음)
+async function searchKakaoNationwide(keyword: string): Promise<Place[]> {
+  try {
+    const r = await axios.get<{ documents: KakaoPlace[] }>(
+      API_ENDPOINTS.KAKAO_LOCAL_SEARCH,
+      { params: { query: keyword, sort: 'accuracy', size: 15 } }
+    );
+    return r.data.documents.map((item) => ({
+      id: item.id,
+      name: item.place_name,
+      address: item.road_address_name || item.address_name,
+      latitude: parseFloat(item.y),
+      longitude: parseFloat(item.x),
+      category: item.category_name,
+      rating: 0,
+      telephone: item.phone,
+      placeUrl: item.place_url,
+      distance: 0,
+      cachedAt: new Date(),
+    }));
+  } catch {
+    return [];
+  }
+}
+
 // 카카오 로컬 검색 (프록시 경유, 반경 2km, 거리순)
-async function searchWithKakao(keyword: string, lat: number, lng: number): Promise<Place[]> {
+async function searchWithKakao(keyword: string, lat: number, lng: number, locationName?: string): Promise<Place[]> {
   const mapResponse = (docs: KakaoPlace[]): Place[] =>
     docs.map((item) => ({
       id: item.id,
@@ -105,30 +131,48 @@ async function searchWithKakao(keyword: string, lat: number, lng: number): Promi
     }));
 
   try {
-    const response = await axios.get<{ documents: KakaoPlace[] }>(
-      API_ENDPOINTS.KAKAO_LOCAL_SEARCH,
-      { params: { query: keyword, x: lng, y: lat, radius: 2000, sort: 'distance', size: 15, category_group_code: 'CE7' } }
-    );
-
-    let allPlaces = mapResponse(response.data.documents);
-
-    // 2km 내 3개 미만이면 5km로 확장
-    if (allPlaces.length < 3) {
-      const wider = await axios.get<{ documents: KakaoPlace[] }>(
+    // 카페(CE7) 먼저, 부족하면 음식점(FD6) 추가
+    async function searchCategory(category: string, radius: number) {
+      const r = await axios.get<{ documents: KakaoPlace[] }>(
         API_ENDPOINTS.KAKAO_LOCAL_SEARCH,
-        { params: { query: keyword, x: lng, y: lat, radius: 5000, sort: 'distance', size: 15, category_group_code: 'CE7' } }
+        { params: { query: keyword, x: lng, y: lat, radius, sort: 'distance', size: 15, category_group_code: category } }
       );
-      allPlaces = mapResponse(wider.data.documents);
+      return mapResponse(r.data.documents);
+    }
+
+    // 1차: 카페 1km
+    let allPlaces = await searchCategory('CE7', 1000);
+
+    // 카페 부족하면 음식점도 검색
+    if (allPlaces.length < 3) {
+      const fd = await searchCategory('FD6', 1000);
+      allPlaces = [...allPlaces, ...fd];
+    }
+
+    // 1km 내 3개 미만이면 범위 확장
+    if (allPlaces.length < 3) {
+      const expandSteps = [2000, 5000, 10000, 20000];
+      for (const radius of expandSteps) {
+        const [ce, fd] = await Promise.all([
+          searchCategory('CE7', radius),
+          searchCategory('FD6', radius),
+        ]);
+        // 중복 제거
+        const seen = new Set(allPlaces.map(p => p.name.replace(/\s/g, '')));
+        for (const p of [...ce, ...fd]) {
+          if (!seen.has(p.name.replace(/\s/g, ''))) {
+            seen.add(p.name.replace(/\s/g, ''));
+            allPlaces.push(p);
+          }
+        }
+        if (allPlaces.length >= 3) break;
+      }
     }
 
     // 프랜차이즈 제외
     const filtered = allPlaces.filter((p) => !isFranchise(p.name));
     const result = filtered.length > 0 ? filtered : allPlaces;
 
-    // 카카오에서 0건이면 네이버로 폴백
-    if (result.length === 0) {
-      return searchWithNaverNearby(keyword, lat, lng);
-    }
     return result;
   } catch {
     // 카카오 실패 시에도 네이버 폴백
@@ -136,13 +180,17 @@ async function searchWithKakao(keyword: string, lat: number, lng: number): Promi
   }
 }
 
-// 네이버 검색 + 좌표 기준 거리순 정렬 (카카오 폴백용)
-async function searchWithNaverNearby(keyword: string, lat: number, lng: number): Promise<Place[]> {
+// 네이버 검색 + 지역명 + 좌표 기준 거리순 정렬
+async function searchWithNaverNearby(keyword: string, lat: number, lng: number, locationName?: string, applyDistanceLimit: boolean = true): Promise<Place[]> {
   try {
+    // 지역명 추가해서 가까운 결과 유도 (예: "영등포 두쫀쿠")
+    const region = locationName ? locationName.split(' ').slice(0, 2).join(' ') : '';
+    const searchQuery = region ? `${region} ${keyword}` : keyword;
+
     const response = await axios.get<{ items: any[] }>(
       API_ENDPOINTS.NAVER_LOCAL_SEARCH,
       {
-        params: { query: `${keyword}`, display: 20, sort: 'comment' },
+        params: { query: searchQuery, display: 20, sort: 'comment' },
         headers: {
           'X-Naver-Client-Id': NAVER_CONFIG.SEARCH_CLIENT_ID,
           'X-Naver-Client-Secret': NAVER_CONFIG.SEARCH_CLIENT_SECRET,
@@ -173,8 +221,14 @@ async function searchWithNaverNearby(keyword: string, lat: number, lng: number):
       };
     });
 
-    // 거리순 정렬, 10km 이내만
-    const nearby = places.filter((p: any) => p.distance <= 10000);
+    // 카페/음식점/디저트 카테고리만 (+ 거리 제한 적용 시 10km 이내)
+    const foodKeywords = ['카페', '디저트', '음식점', '베이커리', '제과', '빵', '떡', '간식', '아이스크림', '음료'];
+    const nearby = places.filter((p: any) => {
+      if (applyDistanceLimit && p.distance > 10000) return false;
+      // 카테고리에 음식 관련 키워드가 있는지
+      const cat = (p.category || '').toLowerCase();
+      return foodKeywords.some(k => cat.includes(k));
+    });
     nearby.sort((a: any, b: any) => a.distance - b.distance);
 
     const filtered = nearby.filter((p: any) => !isFranchise(p.name));

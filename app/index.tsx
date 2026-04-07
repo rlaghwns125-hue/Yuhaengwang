@@ -4,9 +4,12 @@ import {
   StyleSheet,
   TouchableOpacity,
   Text,
+  Image,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import TrendButtons from '../src/components/TrendButtons';
 import NaverMap from '../src/components/NaverMap';
 import RisingTop3 from '../src/components/RisingTop3';
@@ -17,6 +20,7 @@ import { useTrendStore } from '../src/stores/trendStore';
 import { useLocationStore } from '../src/stores/locationStore';
 import { Place } from '../src/types';
 import { getMyRank } from '../src/services/dessertMaster';
+import { useMarketStore } from '../src/stores/marketStore';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -37,10 +41,22 @@ export default function HomeScreen() {
   const [locationReady, setLocationReady] = useState(false);
   const [myRank, setMyRank] = useState<{ rank: number; score: number } | null>(null);
   const [top3Trigger, setTop3Trigger] = useState(0);
+  const equippedBarId = useMarketStore((s) => s.equippedIds.dessertBar);
+  const barItems = useMarketStore((s) => s.items);
+  const barThemeBg = equippedBarId ? barItems.find((i) => i.id === equippedBarId)?.themeData?.barBg : null;
+
+  // 마켓 등에서 돌아올 때 지도 리사이즈 트리거
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        setTimeout(() => window.dispatchEvent(new Event('resize')), 150);
+      }
+    }, [])
+  );
 
   useEffect(() => {
     requestLocation().then(() => setLocationReady(true));
-    loadTrends(user?.uid || null);
+    loadTrends();
     // 로그인 시 랭킹 가져오기
     if (user?.uid) {
       getMyRank(user.uid).then(setMyRank).catch(() => {});
@@ -56,15 +72,23 @@ export default function HomeScreen() {
   }, []);
 
   const handleTrendSelect = (trend: any) => {
-    selectTrend(trend, user?.uid || null, locationName, mapLat, mapLng);
+    // 항상 내 GPS 위치 기준으로 검색
+    selectTrend(trend, user?.uid || null, locationName, latitude, longitude);
     setSelectedPlace(null);
-    // TOP3 갱신 트리거 (검색 로그 저장 후 잠시 대기)
-    setTimeout(() => setTop3Trigger((prev) => prev + 1), 1500);
+    setTimeout(() => setTop3Trigger((prev) => prev + 1), 500);
   };
 
   const handleMapCenterChanged = useCallback((lat: number, lng: number) => {
     updateMapCenter(lat, lng);
   }, [updateMapCenter]);
+
+  // 현위치 검색 버튼: 지도 중심 위치에서 마지막 선택한 디저트로 재검색
+  const handleSearchHere = useCallback(() => {
+    const trend = useTrendStore.getState().selectedTrend;
+    if (trend) {
+      selectTrend(trend, user?.uid || null, locationName, mapLat, mapLng);
+    }
+  }, [locationName, mapLat, mapLng, user?.uid]);
 
   const handlePlacePress = useCallback((place: Place) => {
     setSelectedPlace(place);
@@ -81,6 +105,7 @@ export default function HomeScreen() {
           focusPlace={selectedPlace}
           onMarkerPress={handlePlacePress}
           onCenterChanged={handleMapCenterChanged}
+          onSearchHere={handleSearchHere}
         />
       ) : (
         <View style={styles.loadingMap}>
@@ -98,20 +123,22 @@ export default function HomeScreen() {
               <Text style={styles.rankBadgeText}>🏆 {myRank.score}점 · {myRank.rank}위</Text>
             </View>
           )}
-          <TouchableOpacity
-            style={styles.authButton}
-            onPress={() => {
-              if (user) {
-                useAuthStore.getState().logout();
-              } else {
-                router.push('/login');
-              }
-            }}
-          >
-            <Text style={styles.authButtonText}>
-              {user ? '로그아웃' : '로그인'}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.topButtons}>
+            <TouchableOpacity
+              style={styles.marketButton}
+              onPress={() => router.push(user ? '/market' : '/login')}
+            >
+              <Image source={require('../assets/icons/market.png')} style={styles.marketIcon} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.authButton}
+              onPress={() => router.push(user ? '/profile' : '/login')}
+            >
+              <Text style={styles.authButtonText}>
+                {user ? '👤' : '로그인'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
@@ -122,11 +149,11 @@ export default function HomeScreen() {
       />
 
       {/* 오른쪽: AI 채팅 + TOP3 */}
-      <AiChatBubble locationName={locationName} userLat={mapLat} userLng={mapLng} userId={user?.uid || null} onPlaceSelect={handleAiPlaceSelect} />
+      <AiChatBubble locationName={locationName} userLat={latitude} userLng={longitude} userId={user?.uid || null} onPlaceSelect={handleAiPlaceSelect} />
       <RisingTop3 refreshTrigger={top3Trigger} />
 
-      {/* 하단 오버레이: 트렌드 버튼들 */}
-      <View style={styles.bottomOverlay}>
+      {/* 하단 오버레이: 트렌드 버튼들 (마켓 테마 적용) */}
+      <View style={[styles.bottomOverlay, barThemeBg ? { backgroundColor: barThemeBg } : null]}>
         {isLoadingPlaces && (
           <View style={styles.loadingBar}>
             <ActivityIndicator size="small" color="#FF6B6B" />
@@ -188,12 +215,31 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FF6B6B',
   },
+  topButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  marketButton: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  marketIcon: {
+    width: 28,
+    height: 28,
+    resizeMode: 'contain',
+  },
   authButton: {
     backgroundColor: '#FF6B6B',
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    marginLeft: 4,
   },
   authButtonText: {
     color: '#fff',

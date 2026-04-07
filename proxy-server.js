@@ -18,14 +18,14 @@ const MAP_CLIENT_SECRET = process.env.EXPO_PUBLIC_NAVER_MAP_CLIENT_SECRET || '';
 
 // AI 대화 프록시
 app.post('/api/chat', async (req, res) => {
-  const { message, locationName, userLat, userLng } = req.body;
+  const { message, history, locationName, userLat, userLng } = req.body;
   if (!message) return res.status(400).json({ error: 'message required' });
   try {
     const client = new Anthropic({ apiKey: CLAUDE_API_KEY });
     const response = await client.messages.create({
       model: 'claude-sonnet-4-6', max_tokens: 512,
-      system: `너는 디저트/카페 추천 전문 AI "유행왕"이야. 사용자 위치: "${locationName || '서울'}". 답변은 짧고 친근하게 3줄 이내. 검색 키워드가 있으면 답변 끝에 [SEARCH:키워드] 추가. 키워드는 핵심 디저트명 하나만! 끝 단어가 디저트 종류여야 함. O: 크로플, 초코 젤라또 / X: 젤라또 스무디, 크로플 맛집`,
-      messages: [{ role: 'user', content: message }],
+      system: `너는 "유행왕"이라는 디저트 전문 친구야. 친한 친구처럼 반말로 자연스럽게 대화해. 이모지 섞어쓰고, 날씨/기분/상황에 공감하면서 디저트를 연결해줘. 사용자 위치: "${locationName || '서울'}". 디저트 추천할 때 답변 끝에 [SEARCH:디저트명] 추가. 키워드는 핵심 디저트명만! 이전 대화 맥락 기억해서 이어가.`,
+      messages: [...(history || []).map(h => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: h.content })), { role: 'user', content: message }],
     });
     const text = response.content[0].type === 'text' ? response.content[0].text : '';
     const searchMatch = text.match(/\[SEARCH:(.+?)\]/);
@@ -345,47 +345,59 @@ async function filterBySearchResults(rankedKeywords) {
   return verified;
 }
 
-// 디저트 실시간 트렌드 API
+// 디저트 실시간 트렌드 API (운영과 동일: Firestore 1순위)
 app.get('/api/trends-desserts', async (req, res) => {
   // 캐시 확인
   if (trendCache && Date.now() - trendCacheTime < CACHE_DURATION) {
     return res.json(trendCache);
   }
 
-  console.log('트렌드 수집 시작...');
-
   try {
-    // 1. 네이버 블로그에서 트렌드 수집
+    // 1순위: Firestore에서 읽기 (update-trends.js가 저장한 데이터)
+    const { initializeApp, getApps, getApp } = require('firebase/app');
+    const { getFirestore, collection, getDocs, query: fsQuery, orderBy: fsOrderBy, limit: fsLimit } = require('firebase/firestore');
+    const existingApps = getApps();
+    const firebaseApp = existingApps.find(a => a.name === 'trends-reader')
+      ? getApp('trends-reader')
+      : initializeApp({
+          apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+          authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+          projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+        }, 'trends-reader');
+    const firestore = getFirestore(firebaseApp);
+    const trendsRef = collection(firestore, 'trends');
+    const q = fsQuery(trendsRef, fsOrderBy('rank', 'asc'), fsLimit(15));
+    const snapshot = await getDocs(q);
+
+    if (!snapshot.empty) {
+      const trends = [];
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        trends.push({ keyword: data.keyword, score: data.score });
+      });
+      console.log(`Firestore 트렌드 로드: ${trends.map(t => t.keyword).join(', ')}`);
+      const result = { updatedAt: new Date().toISOString(), trends, source: 'firestore' };
+      trendCache = result;
+      trendCacheTime = Date.now();
+      return res.json(result);
+    }
+  } catch (e) {
+    console.warn('Firestore 트렌드 읽기 실패, 폴백 실행:', e.message);
+  }
+
+  // 2순위: 실시간 수집 (Firestore 비어있을 때만)
+  try {
     const blogTexts = await collectTrendingKeywords();
-    console.log(`블로그 텍스트 수집: ${blogTexts.length}자`);
-
-    // 2. Claude AI로 디저트 키워드 추출
     const keywords = await extractDessertKeywords(blogTexts);
-    console.log(`추출된 키워드: ${keywords.length}개`);
-
-    // 3. 데이터랩으로 검색량 순위
     const ranked = await rankBySearchVolume(keywords);
-    console.log(`데이터랩 순위: ${ranked.map(t => t.keyword).join(', ')}`);
-
-    // 4. 실제 카페 검색 결과 있는 것만 필터링
     const trends = await filterBySearchResults(ranked);
-    console.log(`최종 트렌드 (검증됨): ${trends.map(t => t.keyword).join(', ')}`);
 
-    const result = {
-      updatedAt: new Date().toISOString(),
-      keywords: keywords,
-      trends,
-    };
-
-    // 캐시 저장
+    const result = { updatedAt: new Date().toISOString(), trends };
     trendCache = result;
     trendCacheTime = Date.now();
-
     res.json(result);
   } catch (e) {
     console.error('트렌드 수집 실패:', e.message);
-
-    // 폴백: 기본 키워드로 순위
     try {
       const ranked = await rankBySearchVolume(getDefaultKeywords());
       const trends = await filterBySearchResults(ranked);

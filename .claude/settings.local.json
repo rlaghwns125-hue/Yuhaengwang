@@ -15,7 +15,17 @@
       "Bash(ls node_modules/expo-router/entry*)",
       "Bash(npm ls:*)",
       "Bash(npx kill-port:*)",
-      "Bash(taskkill //F //FI \"WINDOWTITLE eq *expo*\")"
+      "Bash(taskkill //F //FI \"WINDOWTITLE eq *expo*\")",
+      "Bash(node -e ':*)",
+      "Bash(node scripts/update-trends.js)",
+      "Bash(curl -s \"https://dapi.kakao.com/v2/local/search/keyword.json?query=%EB%91%90%EC%AB%80%EC%BF%A0&x=126.8963&y=37.5326&radius=5000&sort=distance&size=5\" -H \"Authorization: KakaoAK 171c8a012546ba3bf263f3f21f8eb925\")",
+      "Bash(node -e \"const d=require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\);const j=JSON.parse\\(d\\);console.log\\('카카오 결과:',j.meta.total_count,'건'\\);j.documents.slice\\(0,3\\).forEach\\(d=>console.log\\(' ',d.place_name,d.distance+'m'\\)\\)\")",
+      "Bash(curl -s \"https://dapi.kakao.com/v2/local/search/keyword.json?query=%EB%91%90%EC%AB%80%EC%BF%A0&x=126.8963&y=37.5326&radius=5000&sort=distance&size=5&category_group_code=CE7,FD6\" -H \"Authorization: KakaoAK 171c8a012546ba3bf263f3f21f8eb925\")",
+      "Bash(curl -s \"https://openapi.naver.com/v1/search/blog.json?query=%EC%98%81%EB%93%B1%ED%8F%AC+%EB%91%90%EC%AB%80%EC%BF%A0&display=5&sort=sim\" -H \"X-Naver-Client-Id: kQWf2s0UIgvgtbRWGl98\" -H \"X-Naver-Client-Secret: YtKOjWZ2BI\" -o C:/Users/user/AppData/Local/Temp/blog_result.json)",
+      "Bash(npx vercel:*)",
+      "WebFetch(domain:developers.naver.com)",
+      "WebSearch",
+      "Bash(node proxy-server.js)"
     ],
     "additionalDirectories": [
       "C:\\Users\\user\\Desktop\\Yuhaengwang"

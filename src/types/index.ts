@@ -2,6 +2,7 @@
 export interface User {
   uid: string;
   email: string;
+  nickname: string;
   provider: 'email' | 'google' | 'kakao';
   createdAt: Date;
 }
@@ -55,6 +56,17 @@ export interface MapMarker {
   longitude: number;
   title: string;
   place: Place;
+}
+
+// 마켓 상품
+export interface MarketItem {
+  id: string;
+  name: string;
+  preview: string; // 미리보기 이미지 URL 또는 emoji
+  price: number; // 쿠키 가격
+  category: 'dessertBar' | 'dessertIcon' | 'placeList' | 'chatbot';
+  description: string;
+  themeData: Record<string, any>; // 실제 적용할 스타일/이미지 데이터
 }
 
 // 개인화 점수 산출 파라미터
