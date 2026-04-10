@@ -43,7 +43,9 @@ export default function HomeScreen() {
   const [top3Trigger, setTop3Trigger] = useState(0);
   const equippedBarId = useMarketStore((s) => s.equippedIds.dessertBar);
   const barItems = useMarketStore((s) => s.items);
-  const barThemeBg = equippedBarId ? barItems.find((i) => i.id === equippedBarId)?.themeData?.barBg : null;
+  const barThemeData = equippedBarId ? barItems.find((i) => i.id === equippedBarId)?.themeData : null;
+  const barThemeBg = barThemeData?.barBg || null;
+  const barTextColor = barThemeData?.buttonTextColor || null;
 
   // 마켓 등에서 돌아올 때 지도 리사이즈 트리거
   useFocusEffect(
@@ -114,27 +116,27 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* 상단 오버레이: 지역명 + 로그인 */}
-      <View style={styles.topOverlay}>
+      {/* 상단 오버레이: 지역명 + 로그인 (마켓 테마 적용) */}
+      <View style={[styles.topOverlay, barThemeBg ? { backgroundColor: barThemeBg } : null]}>
         <View style={styles.topRow}>
-          <Text style={styles.locationText}>📍 {locationName}</Text>
+          <Text style={[styles.locationText, barTextColor ? { color: barTextColor } : null]}>📍 {locationName}</Text>
           {user && myRank && (
-            <View style={styles.rankBadge}>
-              <Text style={styles.rankBadgeText}>🏆 {myRank.score}점 · {myRank.rank}위</Text>
+            <View style={[styles.rankBadge, barThemeData ? { backgroundColor: barThemeData.buttonBg, borderColor: barThemeData.buttonSelectedBg } : null]}>
+              <Text style={[styles.rankBadgeText, barTextColor ? { color: barTextColor } : null]}>🏆 {myRank.score}점 · {myRank.rank}위</Text>
             </View>
           )}
           <View style={styles.topButtons}>
             <TouchableOpacity
-              style={styles.marketButton}
+              style={[styles.marketButton, barThemeData ? { backgroundColor: barThemeData.buttonBg, borderColor: barThemeData.buttonSelectedBg } : null]}
               onPress={() => router.push(user ? '/market' : '/login')}
             >
               <Image source={require('../assets/icons/market.png')} style={styles.marketIcon} />
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.authButton}
+              style={[styles.authButton, barThemeData ? { backgroundColor: barThemeData.buttonBg, borderWidth: 1, borderColor: barThemeData.buttonSelectedBg } : null]}
               onPress={() => router.push(user ? '/profile' : '/login')}
             >
-              <Text style={styles.authButtonText}>
+              <Text style={[styles.authButtonText, barThemeData ? { color: barThemeData.buttonTextColor } : null]}>
                 {user ? '👤' : '로그인'}
               </Text>
             </TouchableOpacity>

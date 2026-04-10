@@ -169,18 +169,24 @@ export default function AiChatBubble({ locationName, userLat, userLng, userId, o
               imageBase64: base64,
             }, { timeout: 30000 });
 
-            const { storeName, desserts, points, error } = response.data;
+            const { storeName, storeAddress, category, items, totalScore, error } = response.data;
 
-            if (error || desserts.length === 0) {
-              setMessages((prev) => [...prev, { role: 'ai', text: error || '영수증에서 디저트를 찾을 수 없어요 😢' }]);
+            if (category === 'food') {
+              setMessages((prev) => [...prev, { role: 'ai', text: '디저트/카페 영수증만 등록 가능해요! 일반 음식점은 등록할 수 없어요 🍰' }]);
+            } else if (error || !items || items.length === 0) {
+              setMessages((prev) => [...prev, { role: 'ai', text: error || '영수증에서 메뉴를 찾을 수 없어요 😢' }]);
             } else {
-              // Firestore에 등록
-              await registerReceipt(userId, desserts, storeName);
-              const dessertList = desserts.map((d: string) => `  🍰 ${d}`).join('\n');
-              setMessages((prev) => [...prev, {
-                role: 'ai',
-                text: `✅ 영수증 등록 완료!\n\n🏪 ${storeName || '카페'}\n${dessertList}\n\n🎯 +${points}점 획득!`,
-              }]);
+              // Firestore 등록 (중복 체크 포함)
+              const { points, duplicate } = await registerReceipt(userId, storeName || '', storeAddress || '', items);
+              if (duplicate) {
+                setMessages((prev) => [...prev, { role: 'ai', text: '이미 등록된 영수증이에요! 중복 등록은 안 돼요 🙅' }]);
+              } else {
+                const itemList = items.map((it: any) => `  🍰 ${it.name} x${it.quantity} (${it.price.toLocaleString()}원 · +${it.score}점)`).join('\n');
+                setMessages((prev) => [...prev, {
+                  role: 'ai',
+                  text: `✅ 영수증 등록 완료!\n\n🏪 ${storeName || '카페'}\n${itemList}\n\n🎯 총 +${points}점 획득!`,
+                }]);
+              }
             }
             setIsLoading(false);
             setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);

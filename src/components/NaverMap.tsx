@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { View, StyleSheet, Platform, Text, TouchableOpacity, AppState } from 'react-native';
 import { Place } from '../types';
 import { NAVER_CONFIG } from '../config/api';
+import { useMarketStore } from '../stores/marketStore';
 
 interface NaverMapProps {
   latitude: number;
@@ -97,6 +98,11 @@ function NaverMapWeb({
   const myLocationMarkerRef = useRef<any>(null);
   const onCenterChangedRef = useRef(onCenterChanged);
   const [error, setError] = useState<string | null>(null);
+
+  // 마켓 테마 (현위치 검색 버튼 색 적용)
+  const equippedBarId = useMarketStore((s) => s.equippedIds.dessertBar);
+  const items = useMarketStore((s) => s.items);
+  const barTheme = equippedBarId ? items.find((i) => i.id === equippedBarId)?.themeData : null;
 
   // 내 위치로 이동
   const goToMyLocation = () => {
@@ -276,8 +282,14 @@ function NaverMapWeb({
           <Text style={styles.myLocationIcon}>📍</Text>
         </TouchableOpacity>
         {onSearchHere && (
-          <TouchableOpacity style={styles.searchHereBtn} onPress={onSearchHere} activeOpacity={0.8}>
-            <Text style={styles.searchHereText}>🔍 현위치 검색</Text>
+          <TouchableOpacity
+            style={[styles.searchHereBtn, barTheme ? { backgroundColor: barTheme.buttonSelectedBg } : null]}
+            onPress={onSearchHere}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.searchHereText, barTheme ? { color: barTheme.buttonSelectedTextColor } : null]}>
+              🔍 현위치 검색
+            </Text>
           </TouchableOpacity>
         )}
       </View>

@@ -17,10 +17,22 @@ const db = getFirestore(app);
 
 async function main() {
   const arg = process.argv[2];
-  const hours = arg === 'all' ? null : parseInt(arg) || 24;
-  const since = hours ? new Date(Date.now() - hours * 60 * 60 * 1000) : null;
+  let since;
+  let label;
+  if (arg === 'all') {
+    since = null; label = '전체';
+  } else if (arg) {
+    const hours = parseInt(arg);
+    since = new Date(Date.now() - hours * 60 * 60 * 1000);
+    label = `최근 ${hours}시간`;
+  } else {
+    // 기본: 오늘 00시 이후
+    const now = new Date();
+    since = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+    label = `오늘 (${since.toLocaleDateString('ko-KR')} 00시~)`;
+  }
 
-  console.log(`\n📊 검색 로그 집계 (${since ? `최근 ${hours}시간` : '전체'})\n`);
+  console.log(`\n📊 검색 로그 집계 (${label})\n`);
 
   const snapshot = await getDocs(collection(db, 'searchLogs'));
   const counts = {};

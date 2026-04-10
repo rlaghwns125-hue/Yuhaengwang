@@ -10,7 +10,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { TrendItem } from '../types';
-import { getDessertIcon, getDessertImage } from '../constants/desserts';
+import { getDessertIcon, getDessertPremiumImage } from '../constants/desserts';
 import { useMarketStore } from '../stores/marketStore';
 
 interface TrendButtonsProps {
@@ -40,9 +40,19 @@ export default function TrendButtons({
   const barItems = useMarketStore((s) => s.items);
   const barTheme = equippedBarId ? barItems.find((i) => i.id === equippedBarId)?.themeData : null;
 
+  // 구매한 디저트 아이콘 목록 (구매 + 비활성화 제외)
+  const purchasedIds = useMarketStore((s) => s.purchasedIds);
+  const disabledIconIds = useMarketStore((s) => s.disabledIconIds);
+  const allItems = useMarketStore((s) => s.items);
+  const purchasedIconKeywords = allItems
+    .filter((i) => i.category === 'dessertIcon' && purchasedIds.includes(i.id) && !disabledIconIds.includes(i.id))
+    .map((i) => i.themeData.keyword as string);
+
   const buttons = trends.map((trend) => {
     const isSelected = selectedTrend?.id === trend.id;
-    const image = getDessertImage(trend.keyword);
+    // 구매한 아이콘이면 프리미엄 이미지, 아니면 이모지
+    const hasPremium = purchasedIconKeywords.some((kw) => trend.keyword.includes(kw));
+    const image = hasPremium ? getDessertPremiumImage(trend.keyword) : null;
     const emoji = trend.icon || getDessertIcon(trend.keyword);
 
     const btnStyle = barTheme ? {

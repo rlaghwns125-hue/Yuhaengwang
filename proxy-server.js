@@ -24,51 +24,83 @@ app.post('/api/chat', async (req, res) => {
     const client = new Anthropic({ apiKey: CLAUDE_API_KEY });
     const response = await client.messages.create({
       model: 'claude-sonnet-4-6', max_tokens: 512,
-      system: `너는 "유행왕"이라는 디저트 전문 친구야. 친한 친구처럼 반말로 자연스럽게 대화해. 이모지 섞어쓰고, 날씨/기분/상황에 공감하면서 디저트를 연결해줘. 사용자 위치: "${locationName || '서울'}". 디저트 추천할 때 답변 끝에 [SEARCH:디저트명] 추가. 키워드는 핵심 디저트명만! 이전 대화 맥락 기억해서 이어가.`,
+      system: `너는 "유행왕"이라는 디저트 전문 친구야. 친한 친구처럼 반말로 자연스럽게 대화해. 이모지 섞어쓰고, 날씨/기분/상황에 공감하면서 디저트를 연결해줘. 사용자 위치: "${locationName || '서울'}".
+
+규칙 (반드시 지켜):
+- 사용자가 디저트명을 언급하면 무조건 답변 끝에 [SEARCH:디저트명] 태그 붙여 (네가 모르는 디저트도 일단 붙여)
+- 사용자가 가게 이름/위치를 물어보면 [PLACE:가게명] 태그 사용 (예: "오브네뜨 어디", "노티드 위치")
+- 키워드는 핵심 명사만 (맛집/카페/추천/위치/알려줘 같은 단어 빼고)
+- 한 답변에 SEARCH나 PLACE 중 하나만, 마지막에 한 번만`,
       messages: [...(history || []).map(h => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: h.content })), { role: 'user', content: message }],
     });
     const text = response.content[0].type === 'text' ? response.content[0].text : '';
     const searchMatch = text.match(/\[SEARCH:(.+?)\]/);
-    const searchKeyword = searchMatch ? searchMatch[1] : null;
-    const cleanText = text.replace(/\[SEARCH:.+?\]/, '').trim();
+    const placeMatch = text.match(/\[PLACE:(.+?)\]/);
+    let searchKeyword = searchMatch ? searchMatch[1].trim() : null;
+    let placeName = placeMatch ? placeMatch[1].trim() : null;
+    const cleanText = text.replace(/\[SEARCH:.+?\]/, '').replace(/\[PLACE:.+?\]/, '').trim();
+
+    if (searchKeyword) searchKeyword = searchKeyword.replace(/(맛집|카페|추천|근처|주변|가게|매장|어디|위치|알려줘)/g, '').trim() || null;
+    if (placeName) placeName = placeName.replace(/(위치|어디|알려줘|찾아줘)/g, '').trim() || null;
+
+    async function searchKakao(query, useCafeCategory) {
+      if (!KAKAO_KEY) return [];
+      try {
+        const params = { query, size: 10, sort: 'distance' };
+        if (userLat && userLng) { params.x = userLng; params.y = userLat; params.radius = 20000; }
+        if (useCafeCategory) params.category_group_code = 'CE7';
+        const r = await axios.get('https://dapi.kakao.com/v2/local/search/keyword.json', {
+          params, headers: { Authorization: `KakaoAK ${KAKAO_KEY}` },
+        });
+        return r.data.documents.map((item) => ({
+          id: item.id, name: item.place_name,
+          address: item.road_address_name || item.address_name,
+          latitude: parseFloat(item.y), longitude: parseFloat(item.x),
+          category: item.category_name, rating: 0, telephone: item.phone,
+          placeUrl: item.place_url,
+          distance: item.distance ? parseInt(item.distance) : 0,
+        }));
+      } catch { return []; }
+    }
+
+    async function searchNaver(query) {
+      try {
+        const sr = await axios.get('https://openapi.naver.com/v1/search/local.json', {
+          params: { query, display: 10, sort: 'comment' },
+          headers: { 'X-Naver-Client-Id': SEARCH_CLIENT_ID, 'X-Naver-Client-Secret': SEARCH_CLIENT_SECRET },
+        });
+        return sr.data.items.map((item, i) => ({
+          id: `chat_${i}_${Date.now()}`, name: item.title.replace(/<[^>]*>/g, ''),
+          address: item.roadAddress || item.address,
+          latitude: parseInt(item.mapy) / 1e7, longitude: parseInt(item.mapx) / 1e7,
+          category: item.category, rating: 0, telephone: item.telephone,
+        }));
+      } catch { return []; }
+    }
+
     let places = [];
-    if (searchKeyword && locationName) {
-      if (userLat && userLng && KAKAO_KEY) {
-        try {
-          const sr = await axios.get('https://dapi.kakao.com/v2/local/search/keyword.json', {
-            params: { query: searchKeyword, x: userLng, y: userLat, radius: 2000, sort: 'distance', size: 10, category_group_code: 'CE7' },
-            headers: { Authorization: `KakaoAK ${KAKAO_KEY}` },
-          });
-          places = sr.data.documents.map((item) => ({
-            id: item.id, name: item.place_name,
-            address: item.road_address_name || item.address_name,
-            latitude: parseFloat(item.y), longitude: parseFloat(item.x),
-            category: item.category_name, rating: 0, telephone: item.phone,
-            distance: parseInt(item.distance),
-          }));
-        } catch {}
-      } else {
-        try {
-          const sr = await axios.get('https://openapi.naver.com/v1/search/local.json', {
-            params: { query: `${locationName} ${searchKeyword} 카페`, display: 10, sort: 'comment' },
-            headers: { 'X-Naver-Client-Id': SEARCH_CLIENT_ID, 'X-Naver-Client-Secret': SEARCH_CLIENT_SECRET },
-          });
-          places = sr.data.items.map((item, i) => ({
-            id: `chat_${i}_${Date.now()}`, name: item.title.replace(/<[^>]*>/g, ''),
-            address: item.roadAddress || item.address,
-            latitude: parseInt(item.mapy) / 1e7, longitude: parseInt(item.mapx) / 1e7,
-            category: item.category, rating: 0, telephone: item.telephone,
-          }));
-        } catch {}
+    if (placeName) {
+      // 가게명 직접 검색
+      places = await searchKakao(placeName, false);
+      if (places.length === 0) places = await searchNaver(placeName);
+    } else if (searchKeyword) {
+      // 디저트 키워드 주변 카페 검색 (카테고리 → 전체 → 네이버 순)
+      places = await searchKakao(searchKeyword, true);
+      if (places.length === 0) places = await searchKakao(searchKeyword, false);
+      if (places.length === 0) {
+        const naverResults = await searchNaver(`${locationName || ''} ${searchKeyword}`.trim());
+        places = naverResults.filter((p) => p.name.includes(searchKeyword));
       }
     }
-    // 프랜차이즈 필터
-    const FRANCHISES = ['스타벅스','투썸플레이스','투썸','이디야','메가커피','메가MGC','컴포즈커피','컴포즈','빽다방','파리바게뜨','파리바게트','뚜레쥬르','던킨','배스킨라빈스','배라','할리스','엔제리너스','커피빈','폴바셋','공차','설빙','크리스피크림'];
-    if (places.length > 0) {
+
+    // 프랜차이즈 필터 (디저트 검색일 때만)
+    if (searchKeyword && places.length > 0) {
+      const FRANCHISES = ['스타벅스','투썸플레이스','투썸','이디야','메가커피','메가MGC','컴포즈커피','컴포즈','빽다방','파리바게뜨','파리바게트','뚜레쥬르','던킨','배스킨라빈스','배라','할리스','엔제리너스','커피빈','폴바셋','공차','설빙','크리스피크림'];
       const filtered = places.filter(p => !FRANCHISES.some(f => p.name.includes(f)));
       if (filtered.length > 0) places = filtered;
     }
-    res.json({ reply: cleanText, searchKeyword, places });
+
+    res.json({ reply: cleanText, searchKeyword: searchKeyword || placeName, places });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -81,20 +113,48 @@ app.post('/api/analyze-receipt', async (req, res) => {
   try {
     const client = new Anthropic({ apiKey: CLAUDE_API_KEY });
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-6', max_tokens: 512,
+      model: 'claude-sonnet-4-6', max_tokens: 1024,
       messages: [{ role: 'user', content: [
         { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 } },
-        { type: 'text', text: '이 영수증에서 디저트/음료 메뉴명과 가게명을 추출. JSON만: {"storeName":"가게명","desserts":["메뉴1","메뉴2"]}. 영수증 아니면: {"storeName":"","desserts":[],"error":"영수증을 인식할 수 없습니다"}' },
+        { type: 'text', text: `이 영수증을 분석해주세요.
+
+규칙:
+1. 가게명, 가게 주소 추출
+2. 각 메뉴명, 수량, 단가 추출
+3. 가게 카테고리 판별:
+   - dessert: 카페/디저트/베이커리/아이스크림/빵집/떡집/차/음료 전문점
+   - food: 일반 식당 (한식/중식/일식/양식/분식/고기/치킨/피자 등)
+   - unknown: 영수증이 아니거나 판별 불가
+
+JSON으로만 응답:
+{"storeName":"","storeAddress":"","category":"dessert|food|unknown","items":[{"name":"","quantity":1,"price":0}]}
+
+영수증 아니면:
+{"storeName":"","storeAddress":"","category":"unknown","items":[],"error":"영수증을 인식할 수 없습니다"}` },
       ] }],
     });
     const text = response.content[0].type === 'text' ? response.content[0].text : '';
     const match = text.match(/\{[\s\S]*\}/);
-    if (match) {
-      const r = JSON.parse(match[0]);
-      res.json({ storeName: r.storeName || '', desserts: r.desserts || [], points: (r.desserts?.length || 0) * 5, error: r.error || null });
-    } else {
-      res.json({ storeName: '', desserts: [], points: 0, error: '분석 실패' });
+    if (!match) return res.json({ storeName: '', storeAddress: '', category: 'unknown', items: [], error: '분석 실패' });
+
+    const r = JSON.parse(match[0]);
+
+    if (r.category === 'food') {
+      return res.json({ storeName: r.storeName || '', storeAddress: r.storeAddress || '', category: 'food', items: [], error: '디저트/카페 영수증만 등록 가능해요! 🍰' });
     }
+    if (r.category === 'unknown' || !r.items || r.items.length === 0) {
+      return res.json({ storeName: r.storeName || '', storeAddress: r.storeAddress || '', category: r.category || 'unknown', items: [], error: r.error || '영수증에서 메뉴를 찾을 수 없어요' });
+    }
+
+    // 점수 계산: (수량 * 금액) / 1000, 반올림
+    const items = r.items.map((it) => {
+      const qty = Number(it.quantity) || 1;
+      const price = Number(it.price) || 0;
+      return { name: it.name, quantity: qty, price, score: Math.round((qty * price) / 1000) };
+    });
+    const totalScore = items.reduce((sum, it) => sum + it.score, 0);
+
+    res.json({ storeName: r.storeName || '', storeAddress: r.storeAddress || '', category: 'dessert', items, totalScore, error: null });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

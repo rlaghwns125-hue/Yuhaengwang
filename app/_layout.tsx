@@ -10,7 +10,16 @@ export default function RootLayout() {
 
   useEffect(() => {
     // 리다이렉트 로그인 결과 처리
-    handleRedirectResult();
+    handleRedirectResult().catch(() => {});
+    // 마켓 상품 목록 로드
+    useMarketStore.getState().loadMarketItems();
+
+    // 5초 안에 authReady 안 되면 강제로 설정 (흰화면 방지)
+    const timeout = setTimeout(() => {
+      if (!useAuthStore.getState().authReady) {
+        useAuthStore.getState().setAuthReady();
+      }
+    }, 5000);
 
     const unsubscribe = onAuthChange(async (firebaseUser) => {
       if (firebaseUser) {
@@ -27,7 +36,7 @@ export default function RootLayout() {
       useAuthStore.getState().setAuthReady();
     });
 
-    return unsubscribe;
+    return () => { unsubscribe(); clearTimeout(timeout); };
   }, []);
 
   return (

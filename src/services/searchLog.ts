@@ -46,24 +46,23 @@ export async function logSearch(keyword: string): Promise<boolean> {
   }
 }
 
-// 최근 24시간 인기 검색 TOP N 가져오기
+// 오늘 00시 이후 인기 검색 TOP N 가져오기
 export async function getPopularSearches(topN: number = 3): Promise<Array<{ keyword: string; count: number }>> {
   try {
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const logsRef = collection(db, 'searchLogs');
-    // 단순 쿼리 (인덱스 불필요)
-    const q = query(logsRef);
+    // 오늘 00:00:00 (한국 시간 기준)
+    const now = new Date();
+    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
 
+    const logsRef = collection(db, 'searchLogs');
+    const q = query(logsRef, where('searchedAt', '>=', Timestamp.fromDate(todayMidnight)));
     const snapshot = await getDocs(q);
+
     const counts: Record<string, number> = {};
     const firstSeen: Record<string, number> = {};
 
     snapshot.forEach((docSnap) => {
       const data = docSnap.data();
       const time = data.searchedAt?.toDate()?.getTime() || 0;
-      // 24시간 이내만
-      if (time < since.getTime()) return;
-
       const keyword = data.keyword;
       counts[keyword] = (counts[keyword] || 0) + 1;
       if (!firstSeen[keyword] || time < firstSeen[keyword]) {

@@ -14,7 +14,8 @@ export const dessertBarItems: MarketItem[] = [
     id: 'bar_midnight',
     name: '미드나잇 네온',
     preview: '🌙',
-    price: 1000,
+    price: 2000,
+    rarity: 'epic',
     category: 'dessertBar',
     description: '어두운 밤하늘에 네온 불빛이 켜진 느낌의 디저트바',
     themeData: {
@@ -31,6 +32,7 @@ export const dessertBarItems: MarketItem[] = [
     name: '레드핑크',
     preview: '❤️',
     price: 1000,
+    rarity: 'rare',
     category: 'dessertBar',
     description: '레드핑크의 조화 디저트바',
     themeData: {
@@ -47,6 +49,7 @@ export const dessertBarItems: MarketItem[] = [
     name: '피톤치드그린',
     preview: '🌱',
     price: 1000,
+    rarity: 'rare',
     category: 'dessertBar',
     description: '피톤치드그린의 조화 디저트바',
     themeData: {

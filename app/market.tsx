@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Platform, ActivityIndicator,
+  ScrollView, Platform, ActivityIndicator, Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useMarketStore } from '../src/stores/marketStore';
 import { useAuthStore } from '../src/stores/authStore';
-import { MarketItem } from '../src/types';
+import { MarketItem, RARITY_CONFIG } from '../src/types';
+import { getDessertPremiumImage } from '../src/constants/desserts';
 
 type TabKey = 'dessertBar' | 'dessertIcon' | 'placeList' | 'chatbot' | 'cookie';
 
@@ -32,7 +33,7 @@ function ListIcon({ size = 16, color = '#555' }: { size?: number; color?: string
 }
 
 const TAB_CONFIG: { key: TabKey; label: string; icon: string; customIcon?: boolean }[] = [
-  { key: 'dessertBar', label: '디저트바', icon: '🍫' },
+  { key: 'dessertBar', label: '테마', icon: '🎨' },
   { key: 'dessertIcon', label: '아이콘', icon: '🎨' },
   { key: 'placeList', label: '가게리스트', icon: '', customIcon: true },
   { key: 'chatbot', label: '챗봇', icon: '💬' },
@@ -51,36 +52,78 @@ const COOKIE_PACKS = [
 export default function MarketScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
-  const { cookies, items, purchasedIds, equippedIds, purchaseItem, equipItem, unequipItem } = useMarketStore();
+  const { cookies, items, purchasedIds, equippedIds, purchaseItem, equipItem, unequipItem, addCookies, disabledIconIds, toggleIcon } = useMarketStore();
   const [tab, setTab] = useState<TabKey>('dessertBar');
-
   const authReady = useAuthStore((s) => s.authReady);
+  const [timedOut, setTimedOut] = useState(false);
 
-  // 인증 복원 완료 후 비로그인이면 메인으로
   useEffect(() => {
-    if (authReady && !user) {
-      router.replace('/');
-    }
-  }, [authReady, user]);
+    const timeout = setTimeout(() => setTimedOut(true), 3000);
+    return () => clearTimeout(timeout);
+  }, []);
 
-  // 인증 복원 중 또는 비로그인 → 로딩
-  if (!authReady || !user) {
+  const ready = authReady || timedOut;
+
+  useEffect(() => {
+    if (ready && !user) router.replace('/');
+  }, [ready, user]);
+
+  const isAdmin = user?.email === 'rlaghwns125@gmail.com';
+  const [showOwnedOnly, setShowOwnedOnly] = useState(false);
+  const [iconTag, setIconTag] = useState<string>(''); // 아이콘 태그 필터
+
+  // 카테고리 필터 + 보유 필터 + 미보유 우선 정렬
+  const filteredItems = items
+    .filter((item) => item.category === tab)
+    .filter((item) => !showOwnedOnly || purchasedIds.includes(item.id))
+    .filter((item) => !iconTag || item.category !== 'dessertIcon' || (item.themeData?.keyword || '').includes(iconTag))
+    .sort((a, b) => {
+      const aOwned = purchasedIds.includes(a.id) ? 1 : 0;
+      const bOwned = purchasedIds.includes(b.id) ? 1 : 0;
+      return aOwned - bOwned; // 미보유 먼저
+    });
+
+  if (!ready || !user) {
     return (
       <View style={styles.container}>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color="#FF6B6B" />
+          <Text style={{ marginTop: 12, color: '#999', fontSize: 13 }}>로딩 중...</Text>
         </View>
       </View>
     );
   }
 
-  const isAdmin = user?.email === 'rlaghwns125@gmail.com';
-  const { addCookies } = useMarketStore();
-  const filteredItems = items.filter((item) => item.category === tab);
-
   function handleItemPress(item: MarketItem) {
     const isPurchased = purchasedIds.includes(item.id);
     const isEquipped = equippedIds[item.category] === item.id;
+
+    // 아이콘 탭: 구매 후 탭하면 적용/해제 토글
+    if (item.category === 'dessertIcon') {
+      if (isPurchased) {
+        const isDisabled = disabledIconIds.includes(item.id);
+        if (isDisabled) {
+          toggleIcon(item.id);
+          window.alert(`${item.name} 아이콘이 다시 적용되었어요!`);
+        } else {
+          toggleIcon(item.id);
+          window.alert(`${item.name} 아이콘이 해제되었어요.`);
+        }
+        return;
+      }
+      const costText = isAdmin ? '무료 (관리자)' : `🍪 ${item.price} 쿠키`;
+      if (!isAdmin && cookies < item.price) {
+        window.alert(`쿠키가 ${item.price - cookies}개 더 필요해요!`);
+        return;
+      }
+      if (window.confirm(`${item.name}\n${costText}\n\n${item.description}`)) {
+        const success = purchaseItem(item, user?.email);
+        if (success) {
+          window.alert(`구매 완료! ${item.name} 아이콘이 바로 적용되었어요!`);
+        }
+      }
+      return;
+    }
 
     if (isEquipped) {
       if (window.confirm(`${item.name} 장착을 해제할까요?`)) {
@@ -124,8 +167,15 @@ export default function MarketScreen() {
           <Text style={styles.backText}>← 돌아가기</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>🏪 마켓</Text>
-        <View style={styles.cookieBox}>
-          <Text style={styles.cookieText}>🍪 {cookies}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {isAdmin && (
+            <TouchableOpacity style={styles.adminBtn} onPress={() => router.push('/market-admin')}>
+              <Text style={styles.adminBtnText}>관리</Text>
+            </TouchableOpacity>
+          )}
+          <View style={styles.cookieBox}>
+            <Text style={styles.cookieText}>🍪 {cookies}</Text>
+          </View>
         </View>
       </View>
 
@@ -148,6 +198,39 @@ export default function MarketScreen() {
           </TouchableOpacity>
         ))}
       </View>
+
+      {/* 필터 바 */}
+      {tab !== 'cookie' && (
+        <View style={styles.filterBar}>
+          <TouchableOpacity
+            style={[styles.filterBtn, showOwnedOnly && styles.filterBtnActive]}
+            onPress={() => setShowOwnedOnly(!showOwnedOnly)}
+          >
+            <Text style={[styles.filterBtnText, showOwnedOnly && styles.filterBtnTextActive]}>
+              {showOwnedOnly ? '✓ 보유 상품' : '전체 상품'}
+            </Text>
+          </TouchableOpacity>
+          {tab === 'dessertIcon' && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ gap: 6 }}>
+              <TouchableOpacity
+                style={[styles.tagBtn, !iconTag && styles.tagBtnActive]}
+                onPress={() => setIconTag('')}
+              >
+                <Text style={[styles.tagBtnText, !iconTag && styles.tagBtnTextActive]}>전체</Text>
+              </TouchableOpacity>
+              {Array.from(new Set(items.filter(i => i.category === 'dessertIcon').map(i => i.themeData?.keyword).filter(Boolean))).map((kw) => (
+                <TouchableOpacity
+                  key={kw}
+                  style={[styles.tagBtn, iconTag === kw && styles.tagBtnActive]}
+                  onPress={() => setIconTag(iconTag === kw ? '' : kw)}
+                >
+                  <Text style={[styles.tagBtnText, iconTag === kw && styles.tagBtnTextActive]}>{kw}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+        </View>
+      )}
 
       {/* 콘텐츠 */}
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
@@ -193,6 +276,8 @@ export default function MarketScreen() {
               {filteredItems.map((item) => {
                 const isPurchased = purchasedIds.includes(item.id);
                 const isEquipped = equippedIds[item.category] === item.id;
+                const isIconDisabled = item.category === 'dessertIcon' && disabledIconIds.includes(item.id);
+                const isIconApplied = item.category === 'dessertIcon' && isPurchased && !isIconDisabled;
 
                 return (
                   <TouchableOpacity
@@ -200,26 +285,32 @@ export default function MarketScreen() {
                     style={[
                       styles.itemCard,
                       isPurchased && styles.itemPurchased,
-                      isEquipped && styles.itemEquipped,
+                      (isEquipped || isIconApplied) && styles.itemEquipped,
                     ]}
                     onPress={() => handleItemPress(item)}
                     activeOpacity={0.7}
                   >
-                    {isEquipped && (
+                    {(isEquipped || isIconApplied) && (
                       <View style={styles.equippedBadge}>
-                        <Text style={styles.equippedBadgeText}>착용중</Text>
+                        <Text style={styles.equippedBadgeText}>{isIconApplied ? '적용중' : '착용중'}</Text>
                       </View>
                     )}
                     <ItemPreview item={item} />
+                    {/* 등급 뱃지 */}
+                    <View style={[styles.rarityBadge, { backgroundColor: RARITY_CONFIG[item.rarity].bgColor }]}>
+                      <Text style={[styles.rarityText, { color: RARITY_CONFIG[item.rarity].color }]}>
+                        {RARITY_CONFIG[item.rarity].label}
+                      </Text>
+                    </View>
                     <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
                     {isPurchased ? (
-                      <Text style={styles.ownedText}>보유중</Text>
+                      <Text style={[styles.ownedText, isIconDisabled && { color: '#999' }]}>{isIconApplied ? '적용중' : isIconDisabled ? '해제됨' : '보유중'}</Text>
                     ) : isAdmin ? (
                       <Text style={styles.freeText}>FREE</Text>
                     ) : (
                       <View style={styles.priceRow}>
                         <Text style={styles.priceIcon}>🍪</Text>
-                        <Text style={styles.priceText}>{item.price}</Text>
+                        <Text style={[styles.priceText, { color: RARITY_CONFIG[item.rarity].color }]}>{item.price.toLocaleString()}</Text>
                       </View>
                     )}
                   </TouchableOpacity>
@@ -257,10 +348,14 @@ function ItemPreview({ item }: { item: MarketItem }) {
   }
 
   if (item.category === 'dessertIcon') {
+    const premiumImg = getDessertPremiumImage(td.keyword);
     return (
       <View style={[styles.previewBox, { backgroundColor: '#F8F8F8' }]}>
-        <Text style={styles.previewEmoji}>{item.preview}</Text>
-        <Text style={{ fontSize: 7, color: '#999', marginTop: 2 }}>{td.style}</Text>
+        {premiumImg ? (
+          <Image source={premiumImg} style={{ width: 40, height: 40, borderRadius: 10 }} />
+        ) : (
+          <Text style={styles.previewEmoji}>{item.preview}</Text>
+        )}
       </View>
     );
   }
@@ -384,6 +479,20 @@ const styles = StyleSheet.create({
   priceText: { fontSize: 13, fontWeight: '800', color: '#F57F17' },
   ownedText: { fontSize: 11, fontWeight: '700', color: '#26A69A' },
   freeText: { fontSize: 11, fontWeight: '800', color: '#E040FB' },
+  rarityBadge: { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1, marginBottom: 2 },
+  rarityText: { fontSize: 9, fontWeight: '800' },
+  adminBtn: { backgroundColor: '#333', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  adminBtnText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+
+  filterBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, gap: 8, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  filterBtn: { backgroundColor: '#F5F5F5', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6 },
+  filterBtnActive: { backgroundColor: '#FF6B6B' },
+  filterBtnText: { fontSize: 12, fontWeight: '700', color: '#999' },
+  filterBtnTextActive: { color: '#fff' },
+  tagBtn: { backgroundColor: '#F5F5F5', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5 },
+  tagBtnActive: { backgroundColor: '#333' },
+  tagBtnText: { fontSize: 11, fontWeight: '700', color: '#999' },
+  tagBtnTextActive: { color: '#fff' },
 
   // 쿠키 충전
   cookieHeader: {

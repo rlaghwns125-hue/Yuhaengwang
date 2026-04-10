@@ -43,7 +43,9 @@ export default function PlaceList({ places, onPlacePress }: PlaceListProps) {
 
   const openInMap = (place: Place) => {
     // 네이버 지도에서 가게 검색 (리뷰/별점 확인 가능)
-    const naverUrl = `https://map.naver.com/v5/search/${encodeURIComponent(place.name + ' ' + place.address)}`;
+    // 주소에서 시/도만 추출 (예: "서울특별시 영등포구 ..." → "서울특별시")
+    const city = (place.address || '').split(' ')[0] || '';
+    const naverUrl = `https://map.naver.com/v5/search/${encodeURIComponent(city + ' ' + place.name)}`;
     Linking.openURL(naverUrl);
   };
 

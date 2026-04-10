@@ -4,8 +4,6 @@ import {
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
-const POINTS_PER_DESSERT = 5;
-
 // 사용자 점수 정보
 export interface UserScore {
   uid: string;
@@ -22,69 +20,121 @@ export interface DogamItem {
   lastRegistered: Date;
 }
 
-// 영수증에서 추출된 디저트
-export interface ReceiptResult {
-  desserts: string[];
+// 영수증 메뉴 아이템
+export interface ReceiptItem {
+  name: string;
+  quantity: number;
+  price: number;
+  score: number;
+}
+
+// 영수증 분석 결과
+export interface ReceiptAnalysis {
   storeName: string;
-  totalPoints: number;
+  storeAddress: string;
+  category: 'dessert' | 'food' | 'unknown';
+  items: ReceiptItem[];
+  totalScore: number;
+  error: string | null;
+}
+
+// 영수증 해시 (중복 체크용): 가게명 + 메뉴명들 + 총 금액
+function buildReceiptHash(storeName: string, items: ReceiptItem[]): string {
+  const itemsKey = items
+    .map((it) => `${it.name}:${it.quantity}:${it.price}`)
+    .sort()
+    .join('|');
+  return `${storeName}__${itemsKey}`;
+}
+
+// 중복 체크: 동일한 해시의 영수증이 이미 있는지
+export async function isDuplicateReceipt(uid: string, storeName: string, items: ReceiptItem[]): Promise<boolean> {
+  const hash = buildReceiptHash(storeName, items);
+  const receiptsRef = collection(db, 'users', uid, 'receipts');
+  const q = query(receiptsRef, where('hash', '==', hash));
+  const snap = await getDocs(q);
+  return !snap.empty;
 }
 
 // 영수증 등록 → 점수 부여
 export async function registerReceipt(
   uid: string,
-  desserts: string[],
-  storeName: string
-): Promise<number> {
-  const points = desserts.length * POINTS_PER_DESSERT;
+  storeName: string,
+  storeAddress: string,
+  items: ReceiptItem[]
+): Promise<{ points: number; duplicate: boolean }> {
+  // 중복 체크
+  if (await isDuplicateReceipt(uid, storeName, items)) {
+    return { points: 0, duplicate: true };
+  }
 
-  // 1. 영수증 기록 저장
+  const totalPoints = items.reduce((sum, it) => sum + it.score, 0);
+  const hash = buildReceiptHash(storeName, items);
+
+  // 1. 영수증 기록 저장 (해시 포함)
   await addDoc(collection(db, 'users', uid, 'receipts'), {
-    desserts,
     storeName,
-    points,
+    storeAddress,
+    items,
+    points: totalPoints,
+    hash,
     registeredAt: Timestamp.now(),
   });
 
-  // 2. 도감 업데이트 (각 디저트별 카운트)
-  for (const dessert of desserts) {
-    const dogamRef = doc(db, 'users', uid, 'dogam', dessert);
+  // 2. 도감 업데이트 (메뉴별 카운트)
+  for (const it of items) {
+    const dogamRef = doc(db, 'users', uid, 'dogam', it.name);
     const dogamDoc = await getDoc(dogamRef);
     if (dogamDoc.exists()) {
       await setDoc(dogamRef, {
-        keyword: dessert,
-        count: (dogamDoc.data().count || 0) + 1,
+        keyword: it.name,
+        count: (dogamDoc.data().count || 0) + it.quantity,
         lastRegistered: Timestamp.now(),
       });
     } else {
       await setDoc(dogamRef, {
-        keyword: dessert,
-        count: 1,
+        keyword: it.name,
+        count: it.quantity,
         lastRegistered: Timestamp.now(),
       });
     }
   }
 
-  // 3. 사용자 총 점수 업데이트
+  // 3. 글로벌 디저트 DB에 신규 디저트 등록 (없으면)
+  for (const it of items) {
+    const globalRef = doc(db, 'dessertDB', it.name);
+    const globalDoc = await getDoc(globalRef);
+    if (!globalDoc.exists()) {
+      await setDoc(globalRef, {
+        name: it.name,
+        addedFromReceipt: true,
+        firstSeenAt: Timestamp.now(),
+      });
+    }
+  }
+
+  // 4. 사용자 총 점수 업데이트
+  const totalQty = items.reduce((sum, it) => sum + it.quantity, 0);
   const userScoreRef = doc(db, 'userScores', uid);
   const userScoreDoc = await getDoc(userScoreRef);
   if (userScoreDoc.exists()) {
     const data = userScoreDoc.data();
     await setDoc(userScoreRef, {
       ...data,
-      totalScore: (data.totalScore || 0) + points,
-      totalDesserts: (data.totalDesserts || 0) + desserts.length,
+      totalScore: (data.totalScore || 0) + totalPoints,
+      totalDesserts: (data.totalDesserts || 0) + totalQty,
       updatedAt: Timestamp.now(),
     });
   } else {
     await setDoc(userScoreRef, {
       uid,
-      totalScore: points,
-      totalDesserts: desserts.length,
+      totalScore: totalPoints,
+      totalDesserts: totalQty,
       updatedAt: Timestamp.now(),
     });
   }
 
-  return points;
+  return { points: totalPoints, duplicate: false };
 }
 
 // 도감 가져오기

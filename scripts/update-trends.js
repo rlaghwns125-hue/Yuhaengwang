@@ -139,7 +139,7 @@ function getDefaultKeywords() {
 async function rankBySearchVolume(keywords) {
   console.log('📊 데이터랩 리그전 시작...');
   const endDate = new Date().toISOString().slice(0, 10);
-  const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10); // 최근 7일
 
   const points = {}; // 키워드별 누적 포인트
   const zScores = {}; // 키워드별 Z-score 배열
@@ -168,7 +168,7 @@ async function rankBySearchVolume(keywords) {
 
       try {
         const response = await axios.post('https://openapi.naver.com/v1/datalab/search',
-          { startDate, endDate, timeUnit: 'week', keywordGroups: batch.map(kw => ({ groupName: kw, keywords: getVariants(kw) })) },
+          { startDate, endDate, timeUnit: 'date', keywordGroups: batch.map(kw => ({ groupName: kw, keywords: getVariants(kw) })) },
           { headers: { 'X-Naver-Client-Id': SEARCH_CLIENT_ID, 'X-Naver-Client-Secret': SEARCH_CLIENT_SECRET, 'Content-Type': 'application/json' } }
         );
 
@@ -256,7 +256,7 @@ async function rankBySearchVolume(keywords) {
       console.log(`  🔄 동점(${score}점) 대결: ${group.join(', ')}`);
       try {
         const response = await axios.post('https://openapi.naver.com/v1/datalab/search',
-          { startDate, endDate, timeUnit: 'week', keywordGroups: group.map(kw => ({ groupName: kw, keywords: getVariants(kw) })) },
+          { startDate, endDate, timeUnit: 'date', keywordGroups: group.map(kw => ({ groupName: kw, keywords: getVariants(kw) })) },
           { headers: { 'X-Naver-Client-Id': SEARCH_CLIENT_ID, 'X-Naver-Client-Secret': SEARCH_CLIENT_SECRET, 'Content-Type': 'application/json' } }
         );
         const tieResults = response.data.results
@@ -273,7 +273,7 @@ async function rankBySearchVolume(keywords) {
         const subGroup = group.slice(i, i + 5);
         try {
           const response = await axios.post('https://openapi.naver.com/v1/datalab/search',
-            { startDate, endDate, timeUnit: 'week', keywordGroups: subGroup.map(kw => ({ groupName: kw, keywords: getVariants(kw) })) },
+            { startDate, endDate, timeUnit: 'date', keywordGroups: subGroup.map(kw => ({ groupName: kw, keywords: getVariants(kw) })) },
             { headers: { 'X-Naver-Client-Id': SEARCH_CLIENT_ID, 'X-Naver-Client-Secret': SEARCH_CLIENT_SECRET, 'Content-Type': 'application/json' } }
           );
           const tieResults = response.data.results
@@ -303,7 +303,7 @@ async function rankBySearchVolume(keywords) {
 
       try {
         const response = await axios.post('https://openapi.naver.com/v1/datalab/search',
-          { startDate, endDate, timeUnit: 'week', keywordGroups: batch.map(kw => ({ groupName: kw, keywords: getVariants(kw) })) },
+          { startDate, endDate, timeUnit: 'date', keywordGroups: batch.map(kw => ({ groupName: kw, keywords: getVariants(kw) })) },
           { headers: { 'X-Naver-Client-Id': SEARCH_CLIENT_ID, 'X-Naver-Client-Secret': SEARCH_CLIENT_SECRET, 'Content-Type': 'application/json' } }
         );
 
@@ -432,7 +432,10 @@ async function saveToFirestore(trends) {
 
 // 메인 실행
 async function main() {
-  console.log('🚀 트렌드 업데이트 시작!\n');
+  const now = new Date();
+  console.log(`\n========================================`);
+  console.log(`🚀 트렌드 업데이트 시작: ${now.toLocaleString('ko-KR')}`);
+  console.log(`========================================\n`);
   const startTime = Date.now();
 
   const blogTexts = await collectBlogKeywords();
@@ -442,7 +445,8 @@ async function main() {
   await saveToFirestore(trends);
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-  console.log(`\n✅ 완료! (${elapsed}초)`);
+  const endTime = new Date();
+  console.log(`\n✅ 완료: ${endTime.toLocaleString('ko-KR')} (소요 ${elapsed}초)`);
   console.log('\n📋 트렌드 순위:');
   trends.forEach((t, i) => console.log(`  ${i + 1}. ${t.keyword} (${t.score})`));
 

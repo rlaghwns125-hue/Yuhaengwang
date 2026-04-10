@@ -58,15 +58,27 @@ export interface MapMarker {
   place: Place;
 }
 
+// 마켓 등급
+export type ItemRarity = 'normal' | 'rare' | 'epic' | 'unique' | 'legend';
+
+export const RARITY_CONFIG: Record<ItemRarity, { label: string; color: string; bgColor: string; price: number }> = {
+  normal: { label: '노멀', color: '#888', bgColor: '#F0F0F0', price: 500 },
+  rare:   { label: '레어', color: '#4A90D9', bgColor: '#E8F0FE', price: 1000 },
+  epic:   { label: '에픽', color: '#A855F7', bgColor: '#F3E8FF', price: 2000 },
+  unique: { label: '유니크', color: '#F59E0B', bgColor: '#FFF8E1', price: 5000 },
+  legend: { label: '레전드', color: '#EF4444', bgColor: '#FEE2E2', price: 10000 },
+};
+
 // 마켓 상품
 export interface MarketItem {
   id: string;
   name: string;
-  preview: string; // 미리보기 이미지 URL 또는 emoji
-  price: number; // 쿠키 가격
+  preview: string;
+  price: number;
+  rarity: ItemRarity;
   category: 'dessertBar' | 'dessertIcon' | 'placeList' | 'chatbot';
   description: string;
-  themeData: Record<string, any>; // 실제 적용할 스타일/이미지 데이터
+  themeData: Record<string, any>;
 }
 
 // 개인화 점수 산출 파라미터

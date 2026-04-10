@@ -171,9 +171,7 @@ async function searchWithKakao(keyword: string, lat: number, lng: number, locati
 
     // 프랜차이즈 제외
     const filtered = allPlaces.filter((p) => !isFranchise(p.name));
-    const result = filtered.length > 0 ? filtered : allPlaces;
-
-    return result;
+    return filtered.length > 0 ? filtered : allPlaces;
   } catch {
     // 카카오 실패 시에도 네이버 폴백
     return searchWithNaverNearby(keyword, lat, lng);
@@ -225,14 +223,17 @@ async function searchWithNaverNearby(keyword: string, lat: number, lng: number, 
     const foodKeywords = ['카페', '디저트', '음식점', '베이커리', '제과', '빵', '떡', '간식', '아이스크림', '음료'];
     const nearby = places.filter((p: any) => {
       if (applyDistanceLimit && p.distance > 10000) return false;
-      // 카테고리에 음식 관련 키워드가 있는지
       const cat = (p.category || '').toLowerCase();
       return foodKeywords.some(k => cat.includes(k));
     });
-    nearby.sort((a: any, b: any) => a.distance - b.distance);
 
-    const filtered = nearby.filter((p: any) => !isFranchise(p.name));
-    return filtered.length > 0 ? filtered : nearby;
+    // 가게명에 검색 키워드가 포함된 결과만 반환 (관련 없는 결과 제외)
+    const nameMatch = nearby.filter((p: any) => p.name.includes(keyword));
+    if (nameMatch.length === 0) return [];
+
+    nameMatch.sort((a: any, b: any) => a.distance - b.distance);
+    const filtered = nameMatch.filter((p: any) => !isFranchise(p.name));
+    return filtered.length > 0 ? filtered : nameMatch;
   } catch {
     return [];
   }
